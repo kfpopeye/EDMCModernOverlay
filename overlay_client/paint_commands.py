@@ -152,6 +152,117 @@ class _CirclePaintCommand(_LegacyPaintCommand):
             window._register_cycle_anchor(self.legacy_item.item_id, anchor_x, anchor_y)
 
 
+
+@dataclass
+class _TablePaintCommand(_LegacyPaintCommand):
+    """Paint a proportional-font table using measured pixel widths.
+
+    Column positions are calculated from the actual QFontMetrics used by the
+    overlay.  This means alignment does not depend on character count.
+    """
+
+    rows: Sequence[Sequence[str]] = field(default_factory=list)
+    x: int = 0
+    y: int = 0
+    point_size: float = 12.0
+    column_widths: Sequence[float] = field(default_factory=list)
+    column_alignments: Sequence[str] = field(default_factory=list)
+    row_colors: Sequence[QColor] = field(default_factory=list)
+    row_backgrounds: Sequence[QColor] = field(default_factory=list)
+    header_color: QColor = field(default_factory=lambda: QColor("white"))
+    header_background: Optional[QColor] = None
+    background: Optional[QColor] = None
+    padding: float = 6.0
+    row_height: float = 20.0
+    header: bool = True
+    header_bold: bool = False
+    font_family: str = ""
+    scale: float = 1.0
+    font_fallbacks: Sequence[str] = field(default_factory=tuple)
+    trace_fn: Optional[Callable[[str, Mapping[str, Any]], None]] = None
+
+    def paint(self, window: "OverlayWindow", painter: QPainter, offset_x: int, offset_y: int) -> None:
+        font = QFont(self.font_family or window._font_family)
+        window._apply_font_fallbacks(font)
+        font.setPointSizeF(self.point_size)
+
+        draw_x = int(round(self.x + offset_x))
+        draw_y = int(round(self.y + offset_y))
+        scale = max(float(self.scale), 1e-6)
+
+        # column_widths/row_height/padding are overlay units; convert to pixels.
+        widths_px = [max(0, int(round(width * scale))) for width in self.column_widths]
+        row_height_px = max(1, int(round(self.row_height * scale))) // 2        #<---------------------------------------------------------------
+        padding_px = max(0, int(round(self.padding * scale)))
+
+        metrics_font = QFont(font)
+        metrics_font.setWeight(QFont.Weight.Bold if self.header_bold else QFont.Weight.Normal)
+        metrics = QFontMetrics(metrics_font)
+
+        total_width = sum(widths_px)
+        total_height = row_height_px * len(self.rows)
+
+        if self.background is not None and total_width > 0 and total_height > 0:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(window._apply_payload_opacity_color(self.background)))
+            painter.drawRect(draw_x, draw_y, total_width, total_height)
+
+        current_y = draw_y
+        for row_index, row in enumerate(self.rows):
+            is_header = self.header and row_index == 0 and self.header_color is not None
+            data_index = row_index - 1 if self.header else row_index
+            background = (
+                self.header_background if is_header else
+                self.row_backgrounds[data_index] if 0 <= data_index < len(self.row_backgrounds) else None
+            )
+
+            if background is not None and total_width > 0:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(window._apply_payload_opacity_color(background)))
+                painter.drawRect(draw_x, current_y, total_width, row_height_px)
+
+            font.setWeight(
+                QFont.Weight.Bold if (is_header and self.header_bold) else QFont.Weight.Normal
+            )
+            painter.setFont(font)
+
+            color = (
+                self.header_color if is_header else
+                self.row_colors[data_index] if 0 <= data_index < len(self.row_colors)
+                else QColor("white")
+            )
+            painter.setPen(window._apply_payload_opacity_color(color))
+
+            current_x = draw_x
+            for col_index, cell in enumerate(row):
+                if col_index >= len(widths_px):
+                    break
+                width_px = widths_px[col_index]
+                text = str(cell)
+                text_width = metrics.horizontalAdvance(text)
+                align = (
+                    self.column_alignments[col_index].lower()
+                    if col_index < len(self.column_alignments)
+                    else "left"
+                )
+
+                available = max(0, width_px - (2 * padding_px))
+                if align == "right":
+                    text_x = current_x + max(padding_px, width_px - padding_px - text_width)
+                elif align in {"center", "centre"}:
+                    text_x = current_x + max(padding_px, (width_px - text_width) // 2)
+                else:
+                    text_x = current_x + padding_px
+
+                baseline = current_y + (row_height_px + metrics.ascent() - metrics.descent()) // 2
+                painter.drawText(int(text_x), int(baseline), text)
+                current_x += width_px
+
+            current_y += row_height_px
+
+        if self.trace_fn:
+            self.trace_fn("trace:complete", {"kind": "table", "rows": len(self.rows), "columns": len(self.column_widths)})
+
 @dataclass
 class _VectorPaintCommand(_LegacyPaintCommand):
     vector_payload: Mapping[str, Any] = field(default_factory=dict)
