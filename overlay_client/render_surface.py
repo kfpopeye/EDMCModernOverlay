@@ -1678,7 +1678,8 @@ class RenderSurfaceMixin:
         max_line_spacing = max(normal_metrics.lineSpacing(), normal_metrics.height(), 1)
         if header and header_bold:
             max_line_spacing = max(max_line_spacing, bold_metrics.lineSpacing(), bold_metrics.height())
-        row_height_px = max(1, max_line_spacing + int(round(padding_px * 2)))
+        #row_height_px = max(1, max_line_spacing + int(round(padding_px * 2)))
+        row_height_px = max(1, max_line_spacing)
         row_height = row_height_px / scale
         column_widths = [width / scale for width in widths_px]
 
@@ -1734,7 +1735,9 @@ class RenderSurfaceMixin:
             candidate = QColor(str(background_value))
             if candidate.isValid():
                 background = candidate
-
+        
+        _CLIENT_LOGGER.debug("Table row_height being passed: %s", row_height)
+        
         command = _TablePaintCommand(
             group_key=group_key,
             group_transform=group_transform,
