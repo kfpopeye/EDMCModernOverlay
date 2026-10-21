@@ -1736,8 +1736,6 @@ class RenderSurfaceMixin:
             if candidate.isValid():
                 background = candidate
         
-        _CLIENT_LOGGER.debug("Table row_height being passed: %s", row_height)
-        
         command = _TablePaintCommand(
             group_key=group_key,
             group_transform=group_transform,
